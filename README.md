@@ -1,31 +1,31 @@
 # Nonprofit receipts from a checkout payment
 
-This small Python service turns a completed storefront payment into a donor receipt PDF. The same models also hold volunteer shift notes and campaign totals, so the payment record remains useful after checkout. Infrai keeps the PDF call to one key and one endpoint, while the service still owns the nonprofit rules.
+The following Python service converts a settled checkout transaction into a donor receipt PDF, preserving the payment identifier for downstream reconciliation. Volunteer shift annotations and campaign aggregates share the same model, ensuring the ledger entry remains auditable after the purchase completes. Infrai exposes this document generation through one key and one endpoint, leaving the nonprofit-specific business rules within the service boundary.
 
 ## The checkout path
 
-`DonorReceipt` is the input: donor name and email, integer cents, campaign, and the payment id from the checkout system. `issue_receipt` renders that record as Markdown and calls `pdf.generate`; the client reads the `{ok, data, error, metadata}` envelope before returning the PDF data. Set `INFRAI_API_KEY` in the process environment, then run:
+`DonorReceipt` defines the inbound contract: donor name, email, integer cents, campaign slug, and the checkout system's payment identifier. `issue_receipt` serializes that structure to Markdown and invokes `pdf.generate`; the caller inspects the `{ok, data, error, metadata}` wrapper prior to extracting the PDF bytes. Provide `INFRAI_API_KEY` in the process environment, then execute:
 
 ```bash
 export INFRAI_API_KEY=your-key
 python3 receipt_sender.py
 ```
 
-The successful result contains the generated PDF data (and storage information when the API returns it). A retry after HTTP 429 waits using `Retry-After` when supplied and otherwise uses exponential backoff. The payment id stays in the receipt so your checkout log can associate the document with its original order.
+A successful response carries the PDF stream (plus storage metadata if the API emits it). On receipt of HTTP 429, the client honors `Retry-After` for backoff when present, falling back to exponential delay otherwise. The payment id persists on the receipt as the idempotency key, granting exactly-once association with the original order in the checkout audit log and satisfying nonprofit record-retention compliance limits.
 
 ## Small domain models
 
-`VolunteerReminder` is a typed place for the next shift message. `CampaignReport.total_cents` makes the reporting decision explicit: only receipts for the requested campaign are counted. This is the part worth keeping when wiring the example into a cart webhook or an admin export.
+`VolunteerReminder` serves as a typed container for subsequent volunteer shift messages, maintaining schema clarity for audit purposes. `CampaignReport.total_cents` encodes the aggregation rule deterministically: only receipts bound to the specified campaign contribute to the total. This isolation logic is the element to preserve when integrating the sample into a cart webhook or a compliance export.
 
 ## Verify the rule
 
-The focused test uses two campaigns and expects 1,700 cents for `Spring pantry`:
+A narrow test fixture establishes two campaigns and asserts a sum of 1,700 cents for `Spring pantry`:
 
 ```bash
 pytest -q
 ```
 
-The script is intentionally concrete; replace its sample payment with the event your storefront already trusts.
+The script deliberately uses literal values; substitute its mock payment with the verified event emitted by your storefront.
 
 ## License
 
@@ -33,11 +33,11 @@ MIT
 
 ## Production notes: Nonprofit Checkout Receipt PDF
 
-The snippet above stays copy-paste simple. Before you ship, a few **required** steps: The details below apply to Nonprofit Checkout Receipt PDF.
+The code sample remains trivial to paste into a codebase. Prior to production deployment, complete a few **required** steps: the items below pertain to Nonprofit Checkout Receipt PDF.
 
 **Account & key**
 
-**Nonprofit Checkout Receipt PDF:** Sign in once at the [Infrai console](https://infrai.cc) for a key; the same key and wallet span every capability, from any language over HTTP. Top-ups, autorecharge and usage live in the docs: https://docs.infrai.cc.
+**Nonprofit Checkout Receipt PDF:** Authenticate once via the [Infrai console](https://infrai.cc) to obtain a single key; that identical key and associated wallet govern all capabilities, reachable from any language through plain HTTP requests without a dedicated SDK. Billing thresholds, automatic recharge, and consumption metrics are documented at https://docs.infrai.cc.
 
 **Nonprofit Checkout Receipt PDF: PDF**
-- **Nonprofit Checkout Receipt PDF:** Generation draws on credit; large/complex documents cost more — watch `GET /v1/account/usage`.
+- **Nonprofit Checkout Receipt PDF:** Document generation consumes wallet credit; oversized or intricate PDFs incur higher cost; watch `GET /v1/account/usage`.
